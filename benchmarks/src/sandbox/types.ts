@@ -1,0 +1,70 @@
+export interface ProviderConfig {
+  /** Provider name */
+  name: string;
+  /** Number of iterations (default: 10) */
+  iterations?: number;
+  /** Timeout per iteration in ms (default: 120000) */
+  timeout?: number;
+  /** Environment variables that must all be set to run this benchmark */
+  requiredEnvVars: string[];
+  /** Creates a compute instance — either direct SDK or gateway-based */
+  createCompute: () => any;
+  /** Options passed to sandbox.create() (e.g. { image: 'node:20' }) */
+  sandboxOptions?: Record<string, any>;
+  /** Timeout for sandbox.destroy() in ms (default: 15000) */
+  destroyTimeoutMs?: number;
+}
+
+export interface TimingResult {
+  /** Total time from start to first successful code execution */
+  ttiMs: number;
+  /** Error message if this iteration failed */
+  error?: string;
+}
+
+export interface Stats {
+  median: number;
+  p95: number;
+  p99: number;
+}
+
+export type BenchmarkMode = 'sequential' | 'staggered' | 'burst' | 'concurrent';
+
+export interface BenchmarkResult {
+  provider: string;
+  mode?: BenchmarkMode;
+  iterations: TimingResult[];
+  summary: {
+    ttiMs: Stats;
+  };
+  /** Composite weighted score (0-100, higher = better). Computed post-benchmark. */
+  compositeScore?: number;
+  /** Success rate as a fraction (0 to 1). Computed post-benchmark. */
+  successRate?: number;
+  skipped?: boolean;
+  skipReason?: string;
+}
+
+export interface ConcurrentBenchmarkResult extends BenchmarkResult {
+  mode: 'concurrent';
+  /** Number of sandboxes launched simultaneously */
+  concurrency: number;
+  /** Wall-clock time from first request to last sandbox ready (ms) */
+  wallClockMs: number;
+  /** Time until the fastest sandbox was interactive under load (ms) */
+  timeToFirstReadyMs: number;
+}
+
+export interface StaggeredBenchmarkResult extends BenchmarkResult {
+  mode: 'staggered';
+  /** Number of sandboxes launched */
+  concurrency: number;
+  /** Delay in ms between each sandbox launch */
+  staggerDelayMs: number;
+  /** Wall-clock time from first launch to last sandbox ready (ms) */
+  wallClockMs: number;
+  /** Time until the fastest sandbox was interactive (ms) */
+  timeToFirstReadyMs: number;
+  /** Per-sandbox timing profile showing launch offset and TTI */
+  rampProfile: { launchedAt: number; readyAt: number; ttiMs: number }[];
+}

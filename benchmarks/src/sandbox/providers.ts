@@ -1,0 +1,143 @@
+import { archil } from '@computesdk/archil';
+import { blaxel } from '@computesdk/blaxel';
+import { codesandbox } from '@computesdk/codesandbox';
+import { cloudflare } from '@computesdk/cloudflare';
+import { daytona } from '@computesdk/daytona';
+import { declaw } from '@computesdk/declaw';
+import { e2b } from '@computesdk/e2b';
+import { hopx } from '@computesdk/hopx';
+import { modal } from '@computesdk/modal';
+import { namespace } from '@computesdk/namespace';
+import { runloop } from '@computesdk/runloop';
+import { sprites } from '@computesdk/sprites';
+import { tensorlake } from '@computesdk/tensorlake'
+import { upstash } from '@computesdk/upstash';
+import { vercel } from '@computesdk/vercel';
+import { compute } from 'computesdk';
+import { vmfast } from './vmfast-provider.js';
+import type { ProviderConfig } from './types.js';
+
+/**
+ * All provider benchmark configurations.
+ *
+ * Direct mode providers use ComputeSDK's open source package directly (no ComputeSDK API key).
+ * Automatic mode providers route through the ComputeSDK gateway (requires COMPUTESDK_API_KEY).
+ */
+export const providers: ProviderConfig[] = [
+  // --- Local provider (Hypervisor.framework demo on Apple Silicon) ---
+  // vmfast-linux is not a hosted sandbox; it's a local binary in a
+  // sibling repo. Override its location with $VMFAST_BIN if needed.
+  {
+    name: 'vmfast',
+    requiredEnvVars: [],
+    createCompute: () => vmfast({ binPath: process.env.VMFAST_BIN }),
+    destroyTimeoutMs: 2_000,
+  },
+  // --- Direct mode (provider SDK packages) ---
+  {
+    name: 'archil',
+    requiredEnvVars: ['ARCHIL_API_KEY', 'ARCHIL_REGION', 'ARCHIL_DISK_ID'],
+    createCompute: () => archil({ apiKey: process.env.ARCHIL_API_KEY!, region: process.env.ARCHIL_REGION! }),
+    sandboxOptions: { metadata: { diskId: process.env.ARCHIL_DISK_ID! } }
+  },
+  {
+    name: 'blaxel',
+    requiredEnvVars: ['BL_API_KEY', 'BL_WORKSPACE'],
+    createCompute: () => blaxel({ apiKey: process.env.BL_API_KEY!, workspace: process.env.BL_WORKSPACE!, region: 'us-was-1' }),
+  },
+  {
+    name: 'cloudflare',
+    requiredEnvVars: ['CLOUDFLARE_SANDBOX_URL', 'CLOUDFLARE_SANDBOX_SECRET'],
+    createCompute: () => cloudflare({ sandboxUrl: process.env.CLOUDFLARE_SANDBOX_URL!, sandboxSecret: process.env.CLOUDFLARE_SANDBOX_SECRET! }),
+  },
+  {
+    name: 'codesandbox',
+    requiredEnvVars: ['CSB_API_KEY'],
+    createCompute: () => codesandbox({ apiKey: process.env.CSB_API_KEY! }),
+    destroyTimeoutMs: 1_000,
+  },
+  {
+    name: 'daytona',
+    requiredEnvVars: ['DAYTONA_API_KEY'],
+    createCompute: () => daytona({ apiKey: process.env.DAYTONA_API_KEY! }),
+    sandboxOptions: { autoStopInterval: 15, autoDeleteInterval: 0 },
+  },
+  {
+    name: 'declaw',
+    requiredEnvVars: ['DECLAW_API_KEY'],
+    createCompute: () => declaw({ apiKey: process.env.DECLAW_API_KEY! }),
+  },
+  {
+    name: 'e2b',
+    requiredEnvVars: ['E2B_API_KEY'],
+    createCompute: () => e2b({ apiKey: process.env.E2B_API_KEY! }),
+  },
+  {
+    name: 'hopx',
+    requiredEnvVars: ['HOPX_API_KEY'],
+    createCompute: () => hopx({ apiKey: process.env.HOPX_API_KEY! }),
+  },
+  {
+    name: 'modal',
+    requiredEnvVars: ['MODAL_TOKEN_ID', 'MODAL_TOKEN_SECRET'],
+    createCompute: () => modal({ tokenId: process.env.MODAL_TOKEN_ID!, tokenSecret: process.env.MODAL_TOKEN_SECRET! }),
+  },
+  {
+    name: 'namespace',
+    requiredEnvVars: ['NSC_TOKEN'],
+    createCompute: () => namespace({ token: process.env.NSC_TOKEN! }),
+    sandboxOptions: { image: 'node:22' },
+  },
+  {
+    name: 'runloop',
+    requiredEnvVars: ['RUNLOOP_API_KEY'],
+    createCompute: () => runloop({ apiKey: process.env.RUNLOOP_API_KEY! }),
+  },
+  {
+    name: 'sprites',
+    requiredEnvVars: ['SPRITES_TOKEN'],
+    createCompute: () => sprites({ apiKey: process.env.SPRITES_TOKEN! }),
+  },
+  {
+    name: 'tensorlake',
+    requiredEnvVars: ['TENSORLAKE_API_KEY'],
+    createCompute: () => tensorlake({ apiKey: process.env.TENSORLAKE_API_KEY! }),
+  },
+  {
+    name: 'upstash',
+    requiredEnvVars: ['UPSTASH_BOX_API_KEY'],
+    createCompute: () => upstash({ apiKey: process.env.UPSTASH_BOX_API_KEY! }),
+    sandboxOptions: { ephemeral: true },
+  },
+  {
+    name: 'vercel',
+    requiredEnvVars: ['VERCEL_TOKEN', 'VERCEL_TEAM_ID', 'VERCEL_PROJECT_ID'],
+    createCompute: () => vercel({ token: process.env.VERCEL_TOKEN!, teamId: process.env.VERCEL_TEAM_ID!, projectId: process.env.VERCEL_PROJECT_ID! }),
+  },
+  //
+  // --- Automatic mode (via ComputeSDK gateway) ---
+  // {
+  //   name: 'railway',
+  //   requiredEnvVars: ['COMPUTESDK_API_KEY', 'RAILWAY_API_KEY', 'RAILWAY_PROJECT_ID', 'RAILWAY_ENVIRONMENT_ID'],
+  //   createCompute: () => {
+  //     compute.setConfig({
+  //       provider: 'railway',
+  //       computesdkApiKey: process.env.COMPUTESDK_API_KEY!,
+  //       railway: { apiToken: process.env.RAILWAY_API_KEY!, projectId: process.env.RAILWAY_PROJECT_ID!, environmentId: process.env.RAILWAY_ENVIRONMENT_ID! },
+  //     } as any);
+  //     return compute;
+  //   },
+  // },
+  // {
+  //   name: 'render',
+  //   requiredEnvVars: ['COMPUTESDK_API_KEY', 'RENDER_API_KEY', 'RENDER_OWNER_ID'],
+  //   createCompute: () => {
+  //     compute.setConfig({
+  //       provider: 'render',
+  //       computesdkApiKey: process.env.COMPUTESDK_API_KEY!,
+  //       render: { apiKey: process.env.RENDER_API_KEY!, ownerId: process.env.RENDER_OWNER_ID! },
+  //     } as any);
+  //     return compute;
+  //   },
+  // },
+];

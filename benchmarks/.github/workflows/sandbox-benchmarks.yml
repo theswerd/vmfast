@@ -1,0 +1,257 @@
+name: Sandbox Benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'src/sandbox/**'
+      - 'src/util/**'
+      - 'src/run.ts'
+      - 'src/merge-results.ts'
+      - 'package.json'
+  schedule:
+    - cron: '0 0 * * *' # Daily at midnight UTC
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Iterations per provider'
+        required: false
+        default: '100'
+      concurrency:
+        description: 'Concurrent sandboxes for burst/staggered tests'
+        required: false
+        default: '100'
+      mode:
+        description: 'Test mode (leave empty to run all)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - sequential
+          - staggered
+          - burst
+
+concurrency:
+  group: benchmarks
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bench:
+    name: Bench ${{ matrix.provider }}
+    runs-on: namespace-profile-default
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        provider:
+          - archil
+          # - beam
+          - blaxel
+          - cloudflare
+          - codesandbox
+          - daytona
+          - declaw
+          - e2b
+          - hopx
+          - modal
+          - namespace
+          - runloop
+          - tensorlake
+          - upstash
+          - vercel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Install dependencies
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npm update
+          else
+            npm ci
+          fi
+      - name: Clear stale results from checkout
+        run: rm -rf results/
+      - name: Run benchmark
+        env:
+          COMPUTESDK_API_KEY: ${{ secrets.COMPUTESDK_API_KEY }}
+          ARCHIL_API_KEY: ${{ secrets.ARCHIL_API_KEY }}
+          ARCHIL_REGION: ${{ secrets.ARCHIL_REGION }}
+          ARCHIL_DISK_ID: ${{ secrets.ARCHIL_DISK_ID }}
+          # BEAM_TOKEN: ${{ secrets.BEAM_TOKEN }}
+          # BEAM_WORKSPACE_ID: ${{ secrets.BEAM_WORKSPACE_ID }}
+          BL_API_KEY: ${{ secrets.BL_API_KEY }}
+          BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
+          CLOUDFLARE_SANDBOX_URL: ${{ secrets.CLOUDFLARE_SANDBOX_URL }}
+          CLOUDFLARE_SANDBOX_SECRET: ${{ secrets.CLOUDFLARE_SANDBOX_SECRET }}
+          CSB_API_KEY: ${{ secrets.CSB_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DECLAW_API_KEY: ${{ secrets.DECLAW_API_KEY }}
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+          HOPX_API_KEY: ${{ secrets.HOPX_API_KEY }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          NSC_TOKEN: ${{ secrets.NSC_TOKEN }}
+          RUNLOOP_API_KEY: ${{ secrets.RUNLOOP_API_KEY }}
+          TENSORLAKE_API_KEY: ${{ secrets.TENSORLAKE_API_KEY }}
+          UPSTASH_BOX_API_KEY: ${{ secrets.UPSTASH_BOX_API_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          MODE_FLAG=""
+          if [ -n "${{ github.event.inputs.mode }}" ]; then
+            MODE_FLAG="--mode ${{ github.event.inputs.mode }}"
+          fi
+          npm run bench -- \
+            --provider ${{ matrix.provider }} \
+            --iterations ${{ github.event.inputs.iterations || (github.event_name == 'pull_request' && '10') || '100' }} \
+            --concurrency ${{ github.event.inputs.concurrency || (github.event_name == 'pull_request' && '10') || '100' }} \
+            $MODE_FLAG
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.provider }}
+          path: results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  collect:
+    name: Collect Results
+    runs-on: namespace-profile-default
+    needs: bench
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Install dependencies
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npm update
+          else
+            npm ci
+          fi
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          pattern: results-*
+      - name: Merge results
+        run: npx tsx src/merge-results.ts --input artifacts
+      - name: Ingest results to platform
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          INGEST_URL: ${{ secrets.INGEST_URL }}
+          INGEST_SECRET: ${{ secrets.INGEST_SECRET }}
+        run: npx tsx src/ingest.ts --type sandbox
+      - run: npm run generate-svg
+      - run: npm run generate-pricing-svg
+      - name: Upload SVGs as artifacts
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-benchmark-svgs
+          path: |
+            results.svg
+            *_tti.svg
+            pricing.svg
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Post results to PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const modes = [
+              { key: 'sequential_tti', label: 'Sequential' },
+              { key: 'staggered_tti', label: 'Staggered' },
+              { key: 'burst_tti', label: 'Burst' },
+            ];
+            let body = '## Sandbox Benchmark Results\n\n';
+            let hasResults = false;
+
+            for (const mode of modes) {
+              const latestPath = path.join('results', mode.key, 'latest.json');
+              if (!fs.existsSync(latestPath)) continue;
+
+              const data = JSON.parse(fs.readFileSync(latestPath, 'utf-8'));
+              const results = data.results
+                .filter(r => !r.skipped)
+                .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0));
+
+              if (results.length === 0) continue;
+              hasResults = true;
+
+              body += `### ${mode.label}\n\n`;
+              body += '| # | Provider | Score | Median TTI | P95 | P99 | Status |\n';
+              body += '|---|----------|-------|------------|-----|-----|--------|\n';
+
+              results.forEach((r, i) => {
+                const score = r.compositeScore !== undefined ? r.compositeScore.toFixed(1) : '--';
+                const median = (r.summary.ttiMs.median / 1000).toFixed(2) + 's';
+                const p95 = (r.summary.ttiMs.p95 / 1000).toFixed(2) + 's';
+                const p99 = (r.summary.ttiMs.p99 / 1000).toFixed(2) + 's';
+                const ok = r.iterations.filter(it => !it.error).length;
+                const total = r.iterations.length;
+                body += `| ${i + 1} | ${r.provider} | ${score} | ${median} | ${p95} | ${p99} | ${ok}/${total} |\n`;
+              });
+
+              body += '\n';
+            }
+
+            if (!hasResults) {
+              body += '> No sandbox benchmark results were generated.\n\n';
+            }
+
+            body += `---\n*[View full run](${runUrl}) · SVGs available as [build artifacts](${runUrl}#artifacts)*`;
+
+            // Find and update existing comment or create new one
+            const marker = '## Sandbox Benchmark Results';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+      - name: Commit and push
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json results.svg *_tti.svg pricing.svg results/
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: update benchmark results [skip ci]"
+          git push

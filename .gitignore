@@ -1,0 +1,14 @@
+# All build outputs + downloaded artefacts.
+/artifacts/
+
+# Vendored benchmarks: deps + generated results files are heavy and
+# ephemeral — keep the source, drop the rest.
+/benchmarks/node_modules/
+/benchmarks/results/
+
+# macOS noise.
+.DS_Store
+
+# Editor scratch.
+*.swp
+*~
